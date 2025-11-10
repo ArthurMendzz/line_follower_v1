@@ -1,53 +1,119 @@
-//Definição dos pinos de controle do motor
-#define M1 9 // Pino_Velocidade 1º Motor ( 0 a 255)_ Porta IN2 ponte H;
-#define M2 11 //Pino_Velocidade 2º Motor ( 0 a 255) _ Porta IN4 ponte H;
-#define dir1 8 //Pino_Direção do 1º Motor: Para frente / Para trás (HIGH ou LOW)_ porta IN1 ponte H;
-#define dir2 10 //Pino_Direção do 2º Motor: Para frente / Para trás (HIGH ou LOW)_ porta IN3 ponte H;
+// === CONFIGURAÇÃO DE PINOS ===
+#define enA 11
+#define in1 10
+#define in2 9
+#define in3 8
+#define in4 7
+#define enB 6
 
-//Definição dos pinos dos sensores
-#define pin_S1 7
-#define pin_S2 6
-bool Sensor1 = 0;
-bool Sensor2 = 0;
+#define sensorEsq A2
+#define sensorCentro A1
+#define sensorDir A0
 
-//variável responsável por controlar a velocidade dos motores
-int velocidade = 150;
+#define trig A4
+#define echo A3
 
-void setup(){
-//Setamos os pinos de controle dos motores como saída
-pinMode(M1, OUTPUT);
-pinMode(M2, OUTPUT);
-pinMode(dir1, OUTPUT);
-pinMode(dir2, OUTPUT);
+#define ledVerde 4
+#define ledVermelho 5
 
-//Setamos a direção inicial do motor como 0, isso fará com que ambos os motores girem para frente
-digitalWrite(dir1, LOW);
-digitalWrite(dir2, LOW);
+// === VARIÁVEIS ===
+int velocidadeNormal = 180;
+int velocidadeCurva = 220;
+int distanciaMinima = 15; // distância mínima em cm para parar
 
-//Setamos os pinos dos sensores como entrada
-pinMode(pin_S1, INPUT);
-pinMode(pin_S2, INPUT);
+// === FUNÇÕES ===
+long lerDistancia() {
+  digitalWrite(trig, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trig, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+  long duracao = pulseIn(echo, HIGH, 20000); // timeout de 20ms
+  long distancia = duracao / 58.2;
+  return distancia;
 }
 
-void loop(){
-//Neste processo armazenamos o valor lido pelo sensor na variável que armazena tais dados.
-Sensor1 = digitalRead(pin_S1);
-Sensor2 = digitalRead(pin_S2);
-
-//Aqui está toda a lógica de comportamento do robô: Para a cor branca atribuímos o valor 0 e, para a cor preta, o valor 1.
-if((Sensor1 == 0) && (Sensor2 == 0)){ // Se detectar na extremidade das faixas duas cores brancas
-analogWrite(M1, velocidade); // Ambos motores ligam na mesma velocidade
-analogWrite(M2, velocidade);
+void parar() {
+  digitalWrite(in1, LOW);
+  digitalWrite(in2, LOW);
+  digitalWrite(in3, LOW);
+  digitalWrite(in4, LOW);
 }
 
-if((Sensor1 == 1) && (Sensor2 == 0)){ // Se detectar um lado preto e o outro branco
-analogWrite(M1, 0); // O motor 1 desliga
-analogWrite(M2, velocidade); // O motor 2 fica ligado, fazendo assim o carrinho virar
+void frente(int velE, int velD) {
+  analogWrite(enA, velE);
+  analogWrite(enB, velD);
+  digitalWrite(in1, HIGH);
+  digitalWrite(in2, LOW);
+  digitalWrite(in3, HIGH);
+  digitalWrite(in4, LOW);
 }
 
-if((Sensor1 == 0) && (Sensor2 == 1)){ // Se detectar um lado branco e o outro preto
-analogWrite(M1, velocidade); //O motor 1 fica ligado
-analogWrite(M2, 0); // O motor 2 desliga, fazendo assim o carrinho virar no outro sentido
+void setup() {
+  pinMode(enA, OUTPUT);
+  pinMode(enB, OUTPUT);
+  pinMode(in1, OUTPUT);
+  pinMode(in2, OUTPUT);
+  pinMode(in3, OUTPUT);
+  pinMode(in4, OUTPUT);
+
+  pinMode(sensorEsq, INPUT);
+  pinMode(sensorCentro, INPUT);
+  pinMode(sensorDir, INPUT);
+
+  pinMode(trig, OUTPUT);
+  pinMode(echo, INPUT);
+
+  pinMode(ledVerde, OUTPUT);
+  pinMode(ledVermelho, OUTPUT);
+
+  parar();
 }
 
+void loop() {
+  // === Leitura dos sensores ===
+  int esquerda = analogRead(sensorEsq);
+  int centro = analogRead(sensorCentro);
+  int direita = analogRead(sensorDir);
+
+  // Ajuste de faixa conforme cor da linha:
+  // linha branca = valor alto, fundo preto = valor baixo
+  bool linhaE = esquerda > 500;
+  bool linhaC = centro > 500;
+  bool linhaD = direita > 500;
+
+  // === Leitura de distância ===
+  long distancia = lerDistancia();
+
+  // === Objeto detectado ===
+  if (distancia < distanciaMinima && distancia > 0) {
+    parar();
+    digitalWrite(ledVerde, LOW);
+    digitalWrite(ledVermelho, HIGH);
+    delay(100);
+    return; // volta pro início do loop
+  } else {
+    digitalWrite(ledVermelho, LOW);
+    digitalWrite(ledVerde, HIGH);
+  }
+
+  // === Lógica do seguidor de linha ===
+  if (linhaC && !linhaE && !linhaD) {
+    // centro na linha → segue reto
+    frente(velocidadeNormal, velocidadeNormal);
+  } 
+  else if (linhaE && !linhaC) {
+    // esquerda detecta → vira levemente pra esquerda
+    frente(velocidadeCurva, velocidadeNormal / 2);
+  } 
+  else if (linhaD && !linhaC) {
+    // direita detecta → vira levemente pra direita
+    frente(velocidadeNormal / 2, velocidadeCurva);
+  } 
+  else if (!linhaC && !linhaE && !linhaD) {
+    // perdeu a linha → para
+    parar();
+  }
+
+  delay(10);
 }
