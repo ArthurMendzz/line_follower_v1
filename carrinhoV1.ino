@@ -1,119 +1,206 @@
-// === CONFIGURAÇÃO DE PINOS ===
-#define enA 11
-#define in1 10
-#define in2 9
-#define in3 8
-#define in4 7
-#define enB 6
+// ====================================================================
+// Carrinho Seguidor de Linha - 2 Rodas e 3 Sensores
+// ====================================================================
+// Configuração da Ponte H L298N
+#define ENA 11  // Enable Motor A (Roda Esquerda) - PWM
+#define IN1 10  // Motor A - Entrada 1
+#define IN2 9   // Motor A - Entrada 2
+#define IN3 8   // Motor B - Entrada 1
+#define IN4 7   // Motor B - Entrada 2
+#define ENB 6   // Enable Motor B (Roda Direita) - PWM
 
-#define sensorEsq A2
-#define sensorCentro A1
-#define sensorDir A0
+// Módulo Seguidor de Linha (3 sensores infravermelhos)
+#define SENSOR_ESQ A2   // Sensor Esquerdo
+#define SENSOR_CENTRO A1 // Sensor Centro
+#define SENSOR_DIR A0   // Sensor Direito
 
-#define trig A4
-#define echo A3
+// Sensor Ultrassônico HC-SR04
+#define TRIG A4  // Trigger
+#define ECHO A3  // Echo
 
-#define ledVerde 4
-#define ledVermelho 5
+// Constantes de velocidade
+#define VELOCIDADE_NORMAL 180   // Velocidade quando anda reto
+#define VELOCIDADE_CURVA_ALTA 200  // Velocidade da roda externa na curva
+#define VELOCIDADE_CURVA_BAIXA 100 // Velocidade da roda interna na curva
 
-// === VARIÁVEIS ===
-int velocidadeNormal = 180;
-int velocidadeCurva = 220;
-int distanciaMinima = 15; // distância mínima em cm para parar
+// Distância mínima para detecção de obstáculo (em cm)
+#define DISTANCIA_MINIMA 15
 
-// === FUNÇÕES ===
-long lerDistancia() {
-  digitalWrite(trig, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trig, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trig, LOW);
-  long duracao = pulseIn(echo, HIGH, 20000); // timeout de 20ms
-  long distancia = duracao / 58.2;
-  return distancia;
-}
-
-void parar() {
-  digitalWrite(in1, LOW);
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, LOW);
-  digitalWrite(in4, LOW);
-}
-
-void frente(int velE, int velD) {
-  analogWrite(enA, velE);
-  analogWrite(enB, velD);
-  digitalWrite(in1, HIGH);
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, HIGH);
-  digitalWrite(in4, LOW);
-}
+// Variáveis para leitura dos sensores
+int sensorEsq, sensorCentro, sensorDir;
+long distancia;
 
 void setup() {
-  pinMode(enA, OUTPUT);
-  pinMode(enB, OUTPUT);
-  pinMode(in1, OUTPUT);
-  pinMode(in2, OUTPUT);
-  pinMode(in3, OUTPUT);
-  pinMode(in4, OUTPUT);
-
-  pinMode(sensorEsq, INPUT);
-  pinMode(sensorCentro, INPUT);
-  pinMode(sensorDir, INPUT);
-
-  pinMode(trig, OUTPUT);
-  pinMode(echo, INPUT);
-
-  pinMode(ledVerde, OUTPUT);
-  pinMode(ledVermelho, OUTPUT);
-
-  parar();
+  Serial.begin(9600);
+  
+  // Configuração dos pinos da Ponte H
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(ENB, OUTPUT);
+  
+  // Configuração dos sensores de linha
+  pinMode(SENSOR_ESQ, INPUT);
+  pinMode(SENSOR_CENTRO, INPUT);
+  pinMode(SENSOR_DIR, INPUT);
+  
+  // Configuração do sensor ultrassônico
+  pinMode(TRIG, OUTPUT);
+  pinMode(ECHO, INPUT);
+  
+  // Inicializa motores parados
+  pararMotores();
+  
+  Serial.println("Sistema Iniciado");
+  delay(2000); // Aguarda 2 segundos antes de começar
 }
 
 void loop() {
-  // === Leitura dos sensores ===
-  int esquerda = analogRead(sensorEsq);
-  int centro = analogRead(sensorCentro);
-  int direita = analogRead(sensorDir);
-
-  // Ajuste de faixa conforme cor da linha:
-  // linha branca = valor alto, fundo preto = valor baixo
-  bool linhaE = esquerda > 500;
-  bool linhaC = centro > 500;
-  bool linhaD = direita > 500;
-
-  // === Leitura de distância ===
-  long distancia = lerDistancia();
-
-  // === Objeto detectado ===
-  if (distancia < distanciaMinima && distancia > 0) {
-    parar();
-    digitalWrite(ledVerde, LOW);
-    digitalWrite(ledVermelho, HIGH);
+  // Lê os sensores de linha (0 = linha branca/sem linha, 1 = linha preta)
+  sensorEsq = digitalRead(SENSOR_ESQ);
+  sensorCentro = digitalRead(SENSOR_CENTRO);
+  sensorDir = digitalRead(SENSOR_DIR);
+  
+  // Lê a distância do sensor ultrassônico
+  distancia = lerDistancia();
+  
+  // Debug - imprime valores dos sensores
+  Serial.print("Sensores (E-C-D): ");
+  Serial.print(sensorEsq);
+  Serial.print("-");
+  Serial.print(sensorCentro);
+  Serial.print("-");
+  Serial.print(sensorDir);
+  Serial.print(" | Distância: ");
+  Serial.print(distancia);
+  Serial.println(" cm");
+  
+  // Verifica se há obstáculo à frente
+  if (distancia < DISTANCIA_MINIMA && distancia > 0) {
+    // Obstáculo detectado - para o carrinho
+    pararMotores();
+    Serial.println("OBSTÁCULO DETECTADO - PARADO");
     delay(100);
-    return; // volta pro início do loop
-  } else {
-    digitalWrite(ledVermelho, LOW);
-    digitalWrite(ledVerde, HIGH);
+    return;
   }
-
-  // === Lógica do seguidor de linha ===
-  if (linhaC && !linhaE && !linhaD) {
-    // centro na linha → segue reto
-    frente(velocidadeNormal, velocidadeNormal);
-  } 
-  else if (linhaE && !linhaC) {
-    // esquerda detecta → vira levemente pra esquerda
-    frente(velocidadeCurva, velocidadeNormal / 2);
-  } 
-  else if (linhaD && !linhaC) {
-    // direita detecta → vira levemente pra direita
-    frente(velocidadeNormal / 2, velocidadeCurva);
-  } 
-  else if (!linhaC && !linhaE && !linhaD) {
-    // perdeu a linha → para
-    parar();
+  
+  // ====================================================================
+  // Lógica de Seguimento de Linha com 3 Sensores
+  // ====================================================================
+  // Linha preta = 1, Superfície branca = 0
+  
+  // Caso 1: Apenas sensor CENTRO detecta linha (0-1-0)
+  // Ação: Seguir em frente com ambas as rodas na mesma velocidade
+  if (sensorEsq == 0 && sensorCentro == 1 && sensorDir == 0) {
+    andarFrente();
+    Serial.println("Ação: FRENTE");
   }
+  
+  // Caso 2: Sensor ESQUERDO detecta linha (1-X-0)
+  // Ação: Virar para a ESQUERDA (roda direita mais rápida)
+  else if (sensorEsq == 1 && sensorDir == 0) {
+    virarEsquerda();
+    Serial.println("Ação: VIRAR ESQUERDA");
+  }
+  
+  // Caso 3: Sensor DIREITO detecta linha (0-X-1)
+  // Ação: Virar para a DIREITA (roda esquerda mais rápida)
+  else if (sensorEsq == 0 && sensorDir == 1) {
+    virarDireita();
+    Serial.println("Ação: VIRAR DIREITA");
+  }
+  
+  // Caso 4: Todos os sensores na linha (1-1-1)
+  // Ação: Pode ser cruzamento ou área ampla - continua em frente
+  else if (sensorEsq == 1 && sensorCentro == 1 && sensorDir == 1) {
+    andarFrente();
+    Serial.println("Ação: CRUZAMENTO - FRENTE");
+  }
+  
+  // Caso 5: Nenhum sensor detecta linha (0-0-0)
+  // Ação: Perdeu a linha - para e aguarda
+  else if (sensorEsq == 0 && sensorCentro == 0 && sensorDir == 0) {
+    pararMotores();
+    Serial.println("Ação: LINHA PERDIDA - PARADO");
+  }
+  
+  // Caso padrão: continua em frente
+  else {
+    andarFrente();
+    Serial.println("Ação: PADRÃO - FRENTE");
+  }
+  
+  delay(50); // Pequeno delay para estabilidade
+}
 
-  delay(10);
+// ====================================================================
+// Função para ler distância do sensor ultrassônico
+// ====================================================================
+long lerDistancia() {
+  digitalWrite(TRIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG, LOW);
+  
+  long duracao = pulseIn(ECHO, HIGH, 30000); // Timeout de 30ms
+  long dist = duracao * 0.034 / 2; // Converte para centímetros
+  
+  return dist;
+}
+
+// ====================================================================
+// Funções de Controle dos Motores
+// ====================================================================
+
+// Andar para frente com velocidade igual nas duas rodas
+void andarFrente() {
+  // Motor A (Esquerdo) - Frente
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  analogWrite(ENA, VELOCIDADE_NORMAL);
+  
+  // Motor B (Direito) - Frente
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+  analogWrite(ENB, VELOCIDADE_NORMAL);
+}
+
+// Virar para a esquerda (roda direita mais rápida que a esquerda)
+void virarEsquerda() {
+  // Motor A (Esquerdo) - Velocidade reduzida
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  analogWrite(ENA, VELOCIDADE_CURVA_BAIXA);
+  
+  // Motor B (Direito) - Velocidade aumentada
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+  analogWrite(ENB, VELOCIDADE_CURVA_ALTA);
+}
+
+// Virar para a direita (roda esquerda mais rápida que a direita)
+void virarDireita() {
+  // Motor A (Esquerdo) - Velocidade aumentada
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  analogWrite(ENA, VELOCIDADE_CURVA_ALTA);
+  
+  // Motor B (Direito) - Velocidade reduzida
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+  analogWrite(ENB, VELOCIDADE_CURVA_BAIXA);
+}
+
+// Parar ambos os motores
+void pararMotores() {
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  analogWrite(ENA, 0);
+  
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+  analogWrite(ENB, 0);
 }
